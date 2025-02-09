@@ -70,4 +70,5 @@ async def ask_absolute_time(callback: types.CallbackQuery):
 @dp.message(Command("remind"))
 async def remind_handler(message: types.Message):
     """Обработчик создания напоминаний"""
-    args = message.
+args = message.text.split(maxsplit=2)
+
