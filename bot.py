@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ✅ Устанавливаем часовой пояс для Киева
 KYIV_TZ = pytz.timezone("Europe/Kiev")
