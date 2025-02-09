@@ -43,7 +43,9 @@ async def start_handler(message: types.Message):
 @dp.message(Command("remind"))
 async def remind_handler(message: types.Message):
     """Обработчик создания напоминаний"""
-    args = message.text.split(maxsplit=2)  # 🟢 Теперь бот правильно разбирает команды
+    print(f"📥 Получена команда: {message.text}")  # ✅ Лог для Render
+
+    args = message.text.split(maxsplit=2)  # 🟢 Теперь бот правильно разбирает команду
 
     if len(args) < 3:
         await message.answer("⚠️ Используй формат: `/remind дд.мм чч:мм ТЕКСТ` или `/remind 30m ТЕКСТ`\n\nПример:\n"
@@ -64,6 +66,7 @@ async def remind_handler(message: types.Message):
         amount, unit = int(match_relative.group(1)), match_relative.group(2)
         delay = amount * 60 if unit == "m" else amount * 3600
         remind_time = datetime.now(KYIV_TZ) + timedelta(seconds=delay)
+        print(f"📌 Установлено напоминание через {amount}{unit} на {remind_time.strftime('%d.%m %H:%M')}")
 
     elif match_absolute:
         # 📅 Напоминание на конкретную дату и время
@@ -80,6 +83,8 @@ async def remind_handler(message: types.Message):
         if remind_time < now:
             await message.answer("⚠️ Ошибка: Нельзя установить напоминание в прошлом!")
             return
+
+        print(f"📌 Установлено напоминание на {remind_time.strftime('%d.%m %H:%M')}")
 
     else:
         await message.answer("⚠️ Неверный формат времени! Используй:\n"
