@@ -47,8 +47,8 @@ async def time_handler(message: types.Message):
     text = args[2].strip() if len(args) > 2 else "Напоминание"
 
     # ✅ Проверяем, это "30m", "2h" или "10.02 13:13"
-    match_relative = re.fullmatch(r"(\d+)([mh])", time_str)
-    match_absolute = re.fullmatch(r"(\d{1,2})\.(\d{1,2}) (\d{1,2}):(\d{2})", time_str)  # Исправлена регулярка
+    match_relative = re.match(r"(\d+)([mh])$", time_str)  # Добавлен `$` для корректного сравнения
+    match_absolute = re.match(r"(\d{1,2})\.(\d{1,2}) (\d{1,2}):(\d{2})$", time_str)  # Добавлен `$`
 
     chat_id = message.chat.id
 
@@ -76,10 +76,13 @@ async def time_handler(message: types.Message):
             return
 
         reminder_type = f"на {remind_time.strftime('%d.%m %H:%M')}"
-
+    
     else:
         await message.answer("❌ Ошибка: неверный формат времени!\nИспользуй `30m`, `2h` или `дд.мм чч:мм`.", parse_mode="Markdown")
         return
+
+    # ✅ Отладочное сообщение (для проверки)
+    await message.answer(f"🔍 **Понял время:** `{remind_time.strftime('%d.%m %H:%M')}` (Киев)")
 
     # ✅ Добавляем напоминание в список
     reminder_id = len(reminders.get(chat_id, [])) + 1
