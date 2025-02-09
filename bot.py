@@ -35,7 +35,7 @@ async def start_handler(message: types.Message):
 async def time_handler(message: types.Message):
     """Обрабатывает установку напоминания через время или по дате"""
     
-    args = message.text.strip().split(maxsplit=2)  # 🟢 Убираем лишние пробелы и разбиваем текст
+    args = message.text.strip().split(None, 2)  # 🟢 Корректное разделение аргументов
 
     if len(args) < 3:
         await message.answer("⚠️ Формат команды: `/time 30m ТЕКСТ` или `/time 10.02 13:13 ТЕКСТ`\n\nПример:\n"
@@ -47,8 +47,8 @@ async def time_handler(message: types.Message):
     text = args[2].strip() if len(args) > 2 else "Напоминание"
 
     # ✅ Проверяем, это "30m", "2h" или "10.02 13:13"
-    match_relative = re.match(r"(\d+)([mh])$", time_str)  # Добавлен `$` для корректного сравнения
-    match_absolute = re.match(r"(\d{1,2})\.(\d{1,2}) (\d{1,2}):(\d{2})$", time_str)  # Добавлен `$`
+    match_relative = re.match(r"^(\d+)([mh])$", time_str)  # 🟢 Время через N минут/часов
+    match_absolute = re.match(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$", time_str)  # 🟢 Конкретная дата и время
 
     chat_id = message.chat.id
 
@@ -61,11 +61,10 @@ async def time_handler(message: types.Message):
 
     elif match_absolute:
         # 📅 Напоминание на конкретную дату и время
-        day, month, hour, minute = map(int, match_absolute.groups())
-        now = datetime.now(KYIV_TZ)
-        year = now.year
-
         try:
+            day, month, hour, minute = map(int, match_absolute.groups())
+            now = datetime.now(KYIV_TZ)
+            year = now.year
             remind_time = KYIV_TZ.localize(datetime(year, month, day, hour, minute))
         except ValueError:
             await message.answer("❌ Ошибка: Некорректная дата или время.")
