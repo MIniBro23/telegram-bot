@@ -4,6 +4,7 @@ import re
 import pytz
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -21,46 +22,104 @@ scheduler = AsyncIOScheduler()
 
 # 📌 Хранение напоминаний
 reminders = {}
+user_states = {}  # Храним состояние выбора пользователя
+
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
+    """Стартовое сообщение с кнопками"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить напоминание", callback_data="add_reminder")]
+        ]
+    )
     await message.answer("Привет! Я бот-напоминалка. 🕒\n\n"
-                         "📌 Чтобы установить напоминание, используй:\n"
-                         "`/time 30m Сделать зарядку` – через время\n"
-                         "`/time 2h Позвонить другу` – через часы\n"
-                         "`/time 10.02 13:13 Встреча` – на дату и время\n\n"
-                         "Пример: `/time 10m Перекусить 🍏`", parse_mode="Markdown")
+                         "📌 Чтобы установить напоминание, используй кнопки ниже.",
+                         reply_markup=keyboard)
 
-@dp.message(Command("time"))
-async def time_handler(message: types.Message):
-    """Обрабатывает установку напоминания через время или по дате"""
-    
-    args = message.text.strip().split(None, 2)  # 🟢 Корректное разделение аргументов
 
-    if len(args) < 3:
-        await message.answer("⚠️ Формат команды: `/time 30m ТЕКСТ` или `/time 10.02 13:13 ТЕКСТ`\n\nПример:\n"
-                             "`/time 10m Перекусить 🍏`\n"
-                             "`/time 10.02 13:13 Встреча`", parse_mode="Markdown")
+@dp.callback_query(lambda c: c.data == "add_reminder")
+async def select_reminder_type(callback_query: types.CallbackQuery):
+    """Выбор типа напоминания (через время или на дату)"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⏳ Через время (30m, 2h)", callback_data="remind_time")],
+            [InlineKeyboardButton(text="📅 На дату (10.02 13:13)", callback_data="remind_date")]
+        ]
+    )
+    await bot.send_message(callback_query.from_user.id, "Выбери, как установить напоминание:", reply_markup=keyboard)
+
+
+@dp.callback_query(lambda c: c.data == "remind_time")
+async def ask_time_format(callback_query: types.CallbackQuery):
+    """Просим ввести время в формате 30m, 2h"""
+    user_states[callback_query.from_user.id] = "waiting_time"
+    await bot.send_message(callback_query.from_user.id, "Введите время в формате 30m, 2h и текст.\n\n"
+                                                         "Пример: `30m Перекусить 🍏`", parse_mode="Markdown")
+
+
+@dp.callback_query(lambda c: c.data == "remind_date")
+async def ask_date_format(callback_query: types.CallbackQuery):
+    """Просим ввести дату в формате 10.02 13:13"""
+    user_states[callback_query.from_user.id] = "waiting_date"
+    await bot.send_message(callback_query.from_user.id, "Введите дату в формате `дд.мм чч:мм` и текст.\n\n"
+                                                         "Пример: `10.02 13:13 Позвонить другу`", parse_mode="Markdown")
+
+
+@dp.message()
+async def process_user_input(message: types.Message):
+    """Обрабатываем ввод пользователя после выбора способа напоминания"""
+    user_id = message.from_user.id
+    if user_id not in user_states:
         return
 
-    time_str = args[1].strip()
-    text = args[2].strip() if len(args) > 2 else "Напоминание"
+    user_state = user_states[user_id]
+    del user_states[user_id]  # Удаляем состояние после обработки
 
-    # ✅ Проверяем, это "30m", "2h" или "10.02 13:13"
-    match_relative = re.match(r"^(\d+)([mh])$", time_str)  # 🟢 Время через N минут/часов
-    match_absolute = re.match(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$", time_str)  # 🟢 Конкретная дата и время
+    if user_state == "waiting_time":
+        await process_time_reminder(message)
+    elif user_state == "waiting_date":
+        await process_date_reminder(message)
 
-    chat_id = message.chat.id
+
+async def process_time_reminder(message: types.Message):
+    """Установка напоминания через N минут/часов"""
+    args = message.text.strip().split(None, 1)
+
+    if len(args) < 2:
+        await message.answer("⚠️ Формат: `30m ТЕКСТ` или `2h ТЕКСТ`")
+        return
+
+    time_str = args[0].strip()
+    text = args[1].strip()
+
+    match_relative = re.match(r"^(\d+)([mh])$", time_str)
 
     if match_relative:
-        # ⏳ Напоминание через n минут/часов
         amount, unit = int(match_relative.group(1)), match_relative.group(2)
         delay = amount * 60 if unit == "m" else amount * 3600
         remind_time = datetime.now(KYIV_TZ) + timedelta(seconds=delay)
-        reminder_type = f"через {amount}{unit}"
+    else:
+        await message.answer("❌ Ошибка: неверный формат времени!\nИспользуй `30m` или `2h`.", parse_mode="Markdown")
+        return
 
-    elif match_absolute:
-        # 📅 Напоминание на конкретную дату и время
+    await set_reminder(message, remind_time, text)
+
+
+async def process_date_reminder(message: types.Message):
+    """Установка напоминания на конкретную дату"""
+    args = message.text.strip().split(None, 2)
+
+    if len(args) < 3:
+        await message.answer("⚠️ Формат: `дд.мм чч:мм ТЕКСТ`")
+        return
+
+    time_str = f"{args[0]} {args[1]}"
+    text = args[2].strip()
+
+    match_absolute = re.match(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$", time_str)
+
+    if match_absolute:
         try:
             day, month, hour, minute = map(int, match_absolute.groups())
             now = datetime.now(KYIV_TZ)
@@ -73,17 +132,16 @@ async def time_handler(message: types.Message):
         if remind_time < now:
             await message.answer("⚠️ Ошибка: Нельзя установить напоминание в прошлом!")
             return
-
-        reminder_type = f"на {remind_time.strftime('%d.%m %H:%M')}"
-    
     else:
-        await message.answer("❌ Ошибка: неверный формат времени!\nИспользуй `30m`, `2h` или `дд.мм чч:мм`.", parse_mode="Markdown")
+        await message.answer("❌ Ошибка: неверный формат даты!\nИспользуй `дд.мм чч:мм`.", parse_mode="Markdown")
         return
 
-    # ✅ Отладочное сообщение (для проверки)
-    await message.answer(f"🔍 **Понял время:** `{remind_time.strftime('%d.%m %H:%M')}` (Киев)")
+    await set_reminder(message, remind_time, text)
 
-    # ✅ Добавляем напоминание в список
+
+async def set_reminder(message: types.Message, remind_time: datetime, text: str):
+    """Общий метод для установки напоминания"""
+    chat_id = message.chat.id
     reminder_id = len(reminders.get(chat_id, [])) + 1
     if chat_id not in reminders:
         reminders[chat_id] = []
@@ -91,8 +149,9 @@ async def time_handler(message: types.Message):
 
     scheduler.add_job(send_reminder, "date", run_date=remind_time, args=[chat_id, reminder_id])
 
-    await message.answer(f"✅ Напоминание #{reminder_id} установлено {reminder_type}.\n"
-                         f"📅 {remind_time.strftime('%H:%M')} (Киевское время)")
+    await message.answer(f"✅ Напоминание #{reminder_id} установлено.\n"
+                         f"📅 {remind_time.strftime('%d.%m %H:%M')} (Киевское время)")
+
 
 async def send_reminder(chat_id, reminder_id):
     """Отправляет напоминание и удаляет его из списка"""
@@ -103,10 +162,12 @@ async def send_reminder(chat_id, reminder_id):
                 reminders[chat_id].remove(reminder)
                 break
 
+
 async def main():
     scheduler.start()
-    print("✅ Бот успешно запущен! Можно использовать /start и /time.")
+    print("✅ Бот успешно запущен! Можно использовать /start.")
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
