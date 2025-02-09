@@ -6,7 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 
-TOKEN = "YOUR_BOT_TOKEN"  # Замени на свой токен
+TOKEN = "7654324736:AAHHU91BadBbPxSrkvI9Y9O-T1GmmfJgBnU"  # Замени на свой токен
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
