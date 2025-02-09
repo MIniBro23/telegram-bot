@@ -28,7 +28,7 @@ async def start_handler(message: types.Message):
                          "📌 Чтобы установить напоминание, используй:\n"
                          "`/time 30m Сделать зарядку` – через время\n"
                          "`/time 2h Позвонить другу` – через часы\n"
-                         "`/time 02.09 13:13 Встреча` – на дату и время\n\n"
+                         "`/time 10.02 13:13 Встреча` – на дату и время\n\n"
                          "Пример: `/time 10m Перекусить 🍏`", parse_mode="Markdown")
 
 @dp.message(Command("time"))
@@ -38,17 +38,17 @@ async def time_handler(message: types.Message):
     args = message.text.strip().split(maxsplit=2)  # 🟢 Убираем лишние пробелы и разбиваем текст
 
     if len(args) < 3:
-        await message.answer("⚠️ Формат команды: `/time 30m ТЕКСТ` или `/time 02.09 13:13 ТЕКСТ`\n\nПример:\n"
+        await message.answer("⚠️ Формат команды: `/time 30m ТЕКСТ` или `/time 10.02 13:13 ТЕКСТ`\n\nПример:\n"
                              "`/time 10m Перекусить 🍏`\n"
-                             "`/time 02.09 13:13 Встреча`", parse_mode="Markdown")
+                             "`/time 10.02 13:13 Встреча`", parse_mode="Markdown")
         return
 
     time_str = args[1].strip()
     text = args[2].strip() if len(args) > 2 else "Напоминание"
 
-    # ✅ Проверяем, это "30m", "2h" или "02.09 13:13"
+    # ✅ Проверяем, это "30m", "2h" или "10.02 13:13"
     match_relative = re.fullmatch(r"(\d+)([mh])", time_str)
-    match_absolute = re.fullmatch(r"(\d{2})\.(\d{2}) (\d{2}):(\d{2})", time_str)
+    match_absolute = re.fullmatch(r"(\d{1,2})\.(\d{1,2}) (\d{1,2}):(\d{2})", time_str)  # Исправлена регулярка
 
     chat_id = message.chat.id
 
