@@ -35,7 +35,7 @@ async def start_handler(message: types.Message):
 async def time_handler(message: types.Message):
     """Обрабатывает установку напоминания через время или по дате"""
     
-    args = message.text.split(maxsplit=2)  # 🟢 Разбиваем текст: /time 30m ТЕКСТ или /time 02.09 13:13 ТЕКСТ
+    args = message.text.strip().split(maxsplit=2)  # 🟢 Убираем лишние пробелы и разбиваем текст
 
     if len(args) < 3:
         await message.answer("⚠️ Формат команды: `/time 30m ТЕКСТ` или `/time 02.09 13:13 ТЕКСТ`\n\nПример:\n"
@@ -43,8 +43,8 @@ async def time_handler(message: types.Message):
                              "`/time 02.09 13:13 Встреча`", parse_mode="Markdown")
         return
 
-    time_str = args[1]
-    text = args[2] if len(args) > 2 else "Напоминание"
+    time_str = args[1].strip()
+    text = args[2].strip() if len(args) > 2 else "Напоминание"
 
     # ✅ Проверяем, это "30m", "2h" или "02.09 13:13"
     match_relative = re.fullmatch(r"(\d+)([mh])", time_str)
