@@ -12,7 +12,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 scheduler = AsyncIOScheduler()
 
-# 📌 Клавиатура с кнопками
+# 📌 Основная клавиатура
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Добавить напоминание")],
@@ -21,35 +21,34 @@ main_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+# ⏳ Кнопки выбора времени напоминания
+time_keyboard = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="5 минут", callback_data="remind_5"),
+         InlineKeyboardButton(text="10 минут", callback_data="remind_10"),
+         InlineKeyboardButton(text="15 минут", callback_data="remind_15")]
+    ]
+)
+
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer("Привет! Я бот-напоминалка. Используй /remind <время> <текст>.\n\nПример:\n/remind 30m Сделать зарядку\n/remind 2h Пойти на встречу", reply_markup=main_keyboard)
+    await message.answer("Привет! Я бот-напоминалка. Выбери действие:", reply_markup=main_keyboard)
 
-@dp.message(Command("remind"))
-async def remind_handler(message: types.Message):
-    args = message.text.split(maxsplit=2)
-    
-    if len(args) < 3:
-        await message.answer("⚠️ Используй формат: /remind <время> <текст>\n\nПример:\n/remind 30m Сделать зарядку\n/remind 2h Пойти на встречу")
-        return
+@dp.message(lambda message: message.text == "➕ Добавить напоминание")
+async def add_reminder_handler(message: types.Message):
+    await message.answer("Выбери время напоминания:", reply_markup=time_keyboard)
 
-    time_str, text = args[1], args[2]
+@dp.callback_query(lambda call: call.data.startswith("remind_"))
+async def inline_reminder_handler(callback: types.CallbackQuery):
+    delay = int(callback.data.split("_")[1])
+    text = "Напоминание!"  # Можно улучшить, чтобы пользователь вводил текст
+    remind_time = datetime.now() + timedelta(minutes=delay)
 
-    # Парсим время (форматы: "30m", "2h")
-    match = re.match(r"(\d+)([mh])", time_str)
-    if not match:
-        await message.answer("⚠️ Неверный формат времени! Используй:\n- `Xm` (минуты)\n- `Xh` (часы)\n\nПример:\n/remind 45m Пауза\n/remind 3h Встреча", parse_mode="Markdown")
-        return
+    # Создание задачи напоминания
+    scheduler.add_job(send_reminder, "date", run_date=remind_time, args=[callback.message.chat.id, text])
 
-    amount, unit = int(match.group(1)), match.group(2)
-    delay = amount * 60 if unit == "m" else amount * 3600  # Минуты или часы в секундах
-
-    remind_time = datetime.now() + timedelta(seconds=delay)
-
-    # Создаём задачу напоминания
-    scheduler.add_job(send_reminder, "date", run_date=remind_time, args=[message.chat.id, text])
-
-    await message.answer(f"✅ Напоминание установлено через {amount} {'минут' if unit == 'm' else 'часов'}.")
+    await callback.message.answer(f"✅ Напоминание установлено через {delay} минут.")
+    await callback.answer()
 
 async def send_reminder(chat_id, text):
     await bot.send_message(chat_id, f"🔔 Напоминание: {text}")
