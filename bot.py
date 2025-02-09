@@ -1,16 +1,18 @@
 import asyncio
 import re
 import os
+import pytz
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+from datetime import datetime
+
+# ✅ Устанавливаем часовой пояс для Киева
+KYIV_TZ = pytz.timezone("Europe/Kiev")
 
 # ✅ Получаем токен из переменной окружения (должен быть в Render!)
 TOKEN = os.getenv("TOKEN")
-
-# Проверяем, получен ли токен
 if not TOKEN:
     raise ValueError("❌ Ошибка: переменная окружения TOKEN не установлена!")
 
@@ -32,41 +34,74 @@ main_keyboard = ReplyKeyboardMarkup(
 
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer("Привет! Я бот-напоминалка. Используй /remind <время> <текст>.\n\nПример:\n/remind 30m Сделать зарядку\n/remind 2h Пойти на встречу", reply_markup=main_keyboard)
-
-@dp.message(lambda message: message.text == "➕ Добавить напоминание")
-async def add_reminder_handler(message: types.Message):
-    await message.answer("Напиши команду `/remind 30m Сделать зарядку` или `/remind 2h Позвонить другу`.")
+    await message.answer("Привет! Я бот-напоминалка. Теперь ты можешь устанавливать напоминания на **конкретную дату и время!**\n\n"
+                         "📌 Примеры:\n"
+                         "`/remind 15.02 18:30 Позвонить родителям`\n"
+                         "`/remind 20.03 09:00 Встреча`\n"
+                         "`/remind 10m Сделать зарядку`", parse_mode="Markdown", reply_markup=main_keyboard)
 
 @dp.message(Command("remind"))
 async def remind_handler(message: types.Message):
     args = message.text.split(maxsplit=2)
     
     if len(args) < 3:
-        await message.answer("⚠️ Используй формат: /remind <время> <текст>\n\nПример:\n/remind 30m Сделать зарядку\n/remind 2h Пойти на встречу")
+        await message.answer("⚠️ Используй формат: `/remind дд.мм чч:мм ТЕКСТ` или `/remind 30m ТЕКСТ`\n\nПример:\n"
+                             "`/remind 15.02 18:30 Позвонить родителям`\n"
+                             "`/remind 10m Сделать зарядку`", parse_mode="Markdown")
         return
 
     time_str, text = args[1], args[2]
-    
-    # Парсим время (форматы: "30m", "2h")
-    match = re.match(r"(\d+)([mh])", time_str)
-    if not match:
-        await message.answer("⚠️ Неверный формат времени! Используй:\n- `Xm` (минуты)\n- `Xh` (часы)\n\nПример:\n/remind 45m Пауза\n/remind 3h Встреча", parse_mode="Markdown")
-        return
 
-    amount, unit = int(match.group(1)), match.group(2)
-    delay = amount * 60 if unit == "m" else amount * 3600
-    remind_time = datetime.now() + timedelta(seconds=delay)
+    # Проверяем, это формат "30m" / "2h" или конкретная дата "15.02 18:30"
+    match_relative = re.match(r"(\d+)([mh])", time_str)
+    match_absolute = re.match(r"(\d{2})\.(\d{2}) (\d{2}):(\d{2})", time_str)
 
     chat_id = message.chat.id
+
+    if match_relative:
+        # Напоминание в минутах/часах (старый формат)
+        amount, unit = int(match_relative.group(1)), match_relative.group(2)
+        delay = amount * 60 if unit == "m" else amount * 3600
+        remind_time = datetime.now(KYIV_TZ) + timedelta(seconds=delay)
+    
+    elif match_absolute:
+        # Напоминание на конкретную дату и время
+        day, month, hour, minute = map(int, match_absolute.groups())
+
+        # Получаем текущее время в Киеве
+        now = datetime.now(KYIV_TZ)
+        year = now.year  # Используем текущий год
+
+        try:
+            remind_time = KYIV_TZ.localize(datetime(year, month, day, hour, minute))
+        except ValueError:
+            await message.answer("❌ Ошибка: Некорректная дата или время. Проверь, что все числа правильные!")
+            return
+
+        # Проверяем, не установлено ли напоминание в прошлом
+        if remind_time < now:
+            await message.answer("⚠️ Ошибка: Нельзя установить напоминание в прошлом!")
+            return
+
+    else:
+        await message.answer("⚠️ Неверный формат времени! Используй:\n"
+                             "- `30m` (минуты) или `2h` (часы)\n"
+                             "- `дд.мм чч:мм` для конкретного времени (киевский часовой пояс)\n\n"
+                             "Пример:\n"
+                             "`/remind 45m Пауза`\n"
+                             "`/remind 15.02 18:30 Позвонить другу`", parse_mode="Markdown")
+        return
+
+    # Добавляем напоминание в список
     reminder_id = len(reminders.get(chat_id, [])) + 1
     if chat_id not in reminders:
         reminders[chat_id] = []
     reminders[chat_id].append((reminder_id, remind_time, text))
 
+    # Создаём задачу напоминания
     scheduler.add_job(send_reminder, "date", run_date=remind_time, args=[chat_id, reminder_id])
 
-    await message.answer(f"✅ Напоминание #{reminder_id} установлено через {amount} {'минут' if unit == 'm' else 'часов'}.")
+    await message.answer(f"✅ Напоминание #{reminder_id} установлено на {remind_time.strftime('%d.%m %H:%M')} (Киевское время).")
 
 async def send_reminder(chat_id, reminder_id):
     """Отправляет напоминание и удаляет его из списка"""
@@ -77,45 +112,9 @@ async def send_reminder(chat_id, reminder_id):
                 reminders[chat_id].remove(reminder)
                 break
 
-@dp.message(lambda message: message.text == "📋 Мои напоминания")
-async def list_reminders_handler(message: types.Message):
-    """Показывает список активных напоминаний"""
-    chat_id = message.chat.id
-    if chat_id not in reminders or len(reminders[chat_id]) == 0:
-        await message.answer("🔹 У тебя нет активных напоминаний.")
-        return
-
-    text = "📋 *Твои напоминания:*\n"
-    for reminder in reminders[chat_id]:
-        time_left = (reminder[1] - datetime.now()).total_seconds() // 60
-        text += f"🔹 *#{reminder[0]}* – {reminder[2]} (осталось ~{int(time_left)} мин)\n"
-
-    await message.answer(text, parse_mode="Markdown")
-
-@dp.message(Command("remove"))
-async def remove_reminder_handler(message: types.Message):
-    """Удаляет напоминание по ID"""
-    args = message.text.split(maxsplit=1)
-    
-    if len(args) < 2 or not args[1].isdigit():
-        await message.answer("⚠️ Используй формат: `/remove <ID>`\n\nПример:\n`/remove 1`", parse_mode="Markdown")
-        return
-
-    reminder_id = int(args[1])
-    chat_id = message.chat.id
-
-    if chat_id in reminders:
-        for reminder in reminders[chat_id]:
-            if reminder[0] == reminder_id:
-                reminders[chat_id].remove(reminder)
-                await message.answer(f"✅ Напоминание #{reminder_id} удалено.")
-                return
-
-    await message.answer("⚠️ Напоминание с таким ID не найдено.")
-
 async def main():
     scheduler.start()
-    print("✅ Бот успешно запущен и работает!")  # Сообщение в логах
+    print("✅ Бот успешно запущен и работает! Поддержка напоминаний по дате и времени активирована.")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
