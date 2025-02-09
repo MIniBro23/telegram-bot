@@ -22,13 +22,12 @@ scheduler = AsyncIOScheduler()
 
 # 📌 Хранение напоминаний
 reminders = {}
-user_states = {}  # Состояние пользователя
 
 # 📌 Главное меню с кнопками
 def main_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Добавить напоминание", callback_data="add_reminder")],
-        [InlineKeyboardButton(text="📜 Мои напоминания", callback_data="list_reminders")]
+        [InlineKeyboardButton(text="📜 История", callback_data="history")],
     ])
 
 @dp.message(Command("start"))
@@ -47,87 +46,41 @@ async def select_reminder_type(callback_query: types.CallbackQuery):
     ])
     await callback_query.message.edit_text("Выбери, как установить напоминание:", reply_markup=keyboard)
 
-@dp.callback_query(lambda c: c.data == "remind_time")
-async def ask_time_format(callback_query: types.CallbackQuery):
-    """Просим ввести время в формате 30m, 2h"""
-    user_states[callback_query.from_user.id] = "waiting_time"
-    await callback_query.message.edit_text("Введите время в формате `30m`, `2h` и текст.\n\n"
-                                           "Пример: `30m Перекусить 🍏`", parse_mode="Markdown")
-
-@dp.callback_query(lambda c: c.data == "remind_date")
-async def ask_date_format(callback_query: types.CallbackQuery):
-    """Просим ввести дату в формате 10.02 13:13"""
-    user_states[callback_query.from_user.id] = "waiting_date"
-    await callback_query.message.edit_text("Введите дату в формате `дд.мм чч:мм` и текст.\n\n"
-                                           "Пример: `10.02 13:13 Позвонить другу`", parse_mode="Markdown")
-
-@dp.message()
-async def process_user_input(message: types.Message):
-    """Обрабатываем ввод пользователя после выбора способа напоминания"""
-    user_id = message.from_user.id
-    if user_id not in user_states:
+@dp.callback_query(lambda c: c.data == "history")
+async def show_history(callback_query: types.CallbackQuery):
+    """Показать список напоминаний"""
+    chat_id = callback_query.from_user.id
+    if chat_id not in reminders or not reminders[chat_id]:
+        await callback_query.message.edit_text("📜 У тебя нет активных напоминаний.", reply_markup=main_menu())
         return
+    
+    history_text = "📜 **Твои напоминания:**\n\n"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
 
-    user_state = user_states[user_id]
-    del user_states[user_id]  # Удаляем состояние после обработки
+    for i, (reminder_id, remind_time, text) in enumerate(reminders[chat_id], 1):
+        history_text += f"📌 {i}. {remind_time.strftime('%d.%m %H:%M')} – {text}\n"
+        keyboard.inline_keyboard.append([
+            InlineKeyboardButton(text=f"❌ Удалить {i}", callback_data=f"delete_{reminder_id}")
+        ])
 
-    if user_state == "waiting_time":
-        await process_time_reminder(message)
-    elif user_state == "waiting_date":
-        await process_date_reminder(message)
+    keyboard.inline_keyboard.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back")])
+    await callback_query.message.edit_text(history_text, reply_markup=keyboard, parse_mode="Markdown")
 
-async def process_time_reminder(message: types.Message):
-    """Установка напоминания через N минут/часов"""
-    args = message.text.strip().split(None, 1)
+@dp.callback_query(lambda c: c.data.startswith("delete_"))
+async def delete_reminder(callback_query: types.CallbackQuery):
+    """Удаление напоминания"""
+    chat_id = callback_query.from_user.id
+    reminder_id = int(callback_query.data.split("_")[1])
 
-    if len(args) < 2:
-        await message.answer("⚠️ Формат: `30m ТЕКСТ` или `2h ТЕКСТ`")
-        return
+    if chat_id in reminders:
+        reminders[chat_id] = [r for r in reminders[chat_id] if r[0] != reminder_id]
+        await callback_query.answer(f"✅ Напоминание #{reminder_id} удалено!")
+        await show_history(callback_query)
 
-    time_str = args[0].strip()
-    text = args[1].strip()
-    match_relative = re.match(r"^(\d+)([mh])$", time_str)
-
-    if match_relative:
-        amount, unit = int(match_relative.group(1)), match_relative.group(2)
-        delay = amount * 60 if unit == "m" else amount * 3600
-        remind_time = datetime.now(KYIV_TZ) + timedelta(seconds=delay)
-    else:
-        await message.answer("❌ Ошибка: неверный формат времени!\nИспользуй `30m` или `2h`.", parse_mode="Markdown")
-        return
-
-    await set_reminder(message, remind_time, text)
-
-async def process_date_reminder(message: types.Message):
-    """Установка напоминания на конкретную дату"""
-    args = message.text.strip().split(None, 2)
-
-    if len(args) < 3:
-        await message.answer("⚠️ Формат: `дд.мм чч:мм ТЕКСТ`")
-        return
-
-    time_str = f"{args[0]} {args[1]}"
-    text = args[2].strip()
-    match_absolute = re.match(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$", time_str)
-
-    if match_absolute:
-        try:
-            day, month, hour, minute = map(int, match_absolute.groups())
-            now = datetime.now(KYIV_TZ)
-            year = now.year
-            remind_time = KYIV_TZ.localize(datetime(year, month, day, hour, minute))
-        except ValueError:
-            await message.answer("❌ Ошибка: Некорректная дата или время.")
-            return
-
-        if remind_time < now:
-            await message.answer("⚠️ Ошибка: Нельзя установить напоминание в прошлом!")
-            return
-    else:
-        await message.answer("❌ Ошибка: неверный формат даты!\nИспользуй `дд.мм чч:мм`.", parse_mode="Markdown")
-        return
-
-    await set_reminder(message, remind_time, text)
+@dp.callback_query(lambda c: c.data == "back")
+async def back_to_main(callback_query: types.CallbackQuery):
+    """Вернуться в главное меню"""
+    await callback_query.message.edit_text("📌 Используй кнопки ниже:", reply_markup=main_menu())
 
 async def set_reminder(message: types.Message, remind_time: datetime, text: str):
     """Общий метод для установки напоминания"""
