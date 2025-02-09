@@ -34,6 +34,7 @@ async def start_handler(message: types.Message):
 @dp.message(Command("time"))
 async def time_handler(message: types.Message):
     """Обрабатывает установку напоминания через время или по дате"""
+    
     args = message.text.split(maxsplit=2)  # 🟢 Разбиваем текст: /time 30m ТЕКСТ или /time 15.02 18:30 ТЕКСТ
 
     if len(args) < 3:
@@ -42,11 +43,12 @@ async def time_handler(message: types.Message):
                              "`/time 15.02 18:30 Встреча`", parse_mode="Markdown")
         return
 
-    time_str, text = args[1], args[2]
+    time_str = args[1]
+    text = args[2] if len(args) > 2 else "Напоминание"
 
     # ✅ Проверяем, это "30m", "2h" или "15.02 18:30"
-    match_relative = re.match(r"^(\d+)([mh])$", time_str)
-    match_absolute = re.match(r"^(\d{2})\.(\d{2}) (\d{2}):(\d{2})$", time_str)
+    match_relative = re.fullmatch(r"(\d+)([mh])", time_str)
+    match_absolute = re.fullmatch(r"(\d{2})\.(\d{2}) (\d{2}):(\d{2})", time_str)
 
     chat_id = message.chat.id
 
