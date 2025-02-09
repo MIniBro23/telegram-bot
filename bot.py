@@ -1,30 +1,25 @@
-import os
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
-from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env файла
-load_dotenv()
+# ВСТАВЬТЕ СВОЙ API-ТОКЕН СЮДА
+TOKEN = "7654324736:AAHHU91BadBbPxSrkvI9Y9O-T1GmmfJgBnU"
 
-# Получаем токен из переменных окружения
-TOKEN = os.getenv("TOKEN")
-
-# Проверяем, что токен загружен
+# Проверяем, что токен не пустой
 if not TOKEN:
-    raise ValueError("Ошибка: Токен бота не найден! Проверьте переменные окружения или .env файл.")
+    raise ValueError("Ошибка: Токен бота не найден! Вставьте свой API-токен в переменную TOKEN.")
 
-# Инициализируем бота и диспетчер
+# Настраиваем логирование (полезно для отладки)
+logging.basicConfig(level=logging.INFO)
+
+# Создаем объект бота и диспетчер
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
-
-# Включаем логирование
-logging.basicConfig(level=logging.INFO)
 
 # Команда /start
 @dp.message_handler(commands=["start"])
 async def start_command(message: types.Message):
-    await message.reply("Привет! Я твой бот 🤖")
+    await message.reply("Привет! Я твой бот 🤖\n\nОтправь мне любое сообщение, и я повторю его!")
 
 # Команда /help
 @dp.message_handler(commands=["help"])
